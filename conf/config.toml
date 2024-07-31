@@ -1,0 +1,11 @@
+[server]
+mode=""
+http_port=""
+api_key=""
+
+[logger]
+level="info"
+
+[triton]
+faceid_host=""
+faceid_grpc_port=""
