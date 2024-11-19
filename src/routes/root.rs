@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use axum::{Json, middleware, Router, ServiceExt};
 use axum::http::header;
-use axum::routing::IntoMakeService;
-use http::{Method, StatusCode, Uri};
+use axum::routing::{get, IntoMakeService};
+use http::{HeaderMap, Method, StatusCode, Uri};
 use serde::{Deserialize, Serialize};
 use tonic_build::Service;
 use tower_http::compression::CompressionLayer;
@@ -14,11 +14,13 @@ use tower_http::sensitive_headers::SetSensitiveHeadersLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_request_id::RequestIdLayer;
 use crate::config::settings::SETTINGS;
-
+use crate::error::errors::ResponseCode;
 use crate::middleware::api_key_mw::validate_api_key_mw;
 use crate::middleware::request_id_mw::generate_request_id_mw;
+use crate::models::antispoofing_model::AntiSpoofingExtractionResultOutput;
 use crate::pipeline::general_pipeline::general_pipeline::GeneralPipeline;
 use crate::pipeline::antispoofing_pipeline::antispoofing_pipeline::AntiSpoofingPipeline;
+use crate::response::common_response::{BaseResponse, GeneralResponseBuilder, GeneralResponseResult};
 use crate::routes::v2::general_extract::new_general_extract_route;
 use crate::routes::v2::antispoofing_extract::new_antispoofing_extract_route;
 use crate::state::general_state::GeneralState;
@@ -78,23 +80,20 @@ pub fn root_routes(router_state: RouterState) -> IntoMakeService<Router> {
     }
 
     let app_router = Router::new()
-        .nest("/api", Router::new().merge(v2_router))
-        .layer(TimeoutLayer::new(Duration::from_secs(request_timeout_duration)),)
-        .layer(SetSensitiveHeadersLayer::new(std::iter::once(
-            header::AUTHORIZATION,
-        )))
-        .layer(CompressionLayer::new())
-        // Propagate `X-Request-Id`s from requests to responses
-        .layer(PropagateHeaderLayer::new(header::HeaderName::from_static(
-            "x-request-id",
-        )))
-        // CORS configuration
-        .layer(CorsLayer::permissive()
-                   .allow_methods([Method::GET, Method::POST, Method::HEAD, Method::OPTIONS]),
+        .nest(
+            "/api",
+            Router::new()
+                .merge(Router::new().route("/health", get(healthcheck)))
+                .merge(v2_router)
+                .layer(CompressionLayer::new())
+                .layer(middleware::from_fn(validate_api_key_mw)),
         )
+        .layer(PropagateHeaderLayer::new(header::HeaderName::from_static("x-request-id")))
+        .layer(CorsLayer::permissive().allow_methods([Method::GET, Method::POST, Method::HEAD, Method::OPTIONS]))
         .layer(RequestIdLayer)
-        .layer(middleware::from_fn(validate_api_key_mw))
         .layer(middleware::from_fn(generate_request_id_mw))
+        .layer(TimeoutLayer::new(Duration::from_secs(request_timeout_duration)))
+        .layer(SetSensitiveHeadersLayer::new(std::iter::once(header::AUTHORIZATION)))
         .fallback(fallback)
         .into_make_service();
     app_router
@@ -106,4 +105,19 @@ async fn fallback(uri: Uri) -> (StatusCode, Json<FallbackResponse>) {
     }))
 }
 
+async fn healthcheck(headers: HeaderMap) -> GeneralResponseResult<BaseResponse<AntiSpoofingExtractionResultOutput>> {
+    let request_id_header = headers.get("x-request-id").unwrap().to_str().unwrap();
+    let request_id: String = request_id_header.parse().unwrap();
+
+    Ok(GeneralResponseBuilder::new()
+        .status_code(StatusCode::OK)
+        .body(BaseResponse {
+            data: None,
+            response_message: "OK".to_string(),
+            response_code: ResponseCode::response_code(ResponseCode::CodeOK),
+            is_success: true,
+            request_id: request_id.clone(),
+        })
+        .build())
+}
 
