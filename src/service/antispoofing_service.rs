@@ -23,12 +23,7 @@ impl AntiSpoofingService {
             Ok(result) => {result}
             Err(e) => {
                 error!("failed to extract face: {e}");
-                return Ok(AntiSpoofingExtractionResultOutput {
-                    face_count: 0,
-                    face_quality: None,
-                    spoofing_check: None,
-                    facial_feature: None,
-                })
+                return Err(e)
             }
         };
 

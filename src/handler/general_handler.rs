@@ -9,6 +9,8 @@ use ecs_logger::extra_fields;
 use http::{HeaderMap, Request, StatusCode};
 use log::{info, error};
 use opencv::calib3d::find_essential_mat;
+use opentelemetry::global;
+use opentelemetry::trace::Tracer;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use crate::config::settings::SETTINGS;
@@ -21,6 +23,12 @@ use crate::state::general_state::GeneralState;
 
 #[debug_handler(state=GeneralState)]
 pub async fn general_extract(headers: HeaderMap, State(state): State<GeneralState>, mut payload: Multipart) -> GeneralResponseResult<BaseResponse<GeneralExtractionResultOutput>> {
+    let tracer = global::tracer(SETTINGS.app.name.clone());
+    let parent_ctx = opentelemetry::Context::new();
+    let span = tracer
+        .span_builder("general-extraction")
+        .start_with_context(&tracer, &parent_ctx);
+
     let request_id_header = headers.get("x-request-id").unwrap().to_str().unwrap();
     let mut im_bytes: Bytes = Bytes::new();
     let request_id: String = request_id_header.parse().unwrap();

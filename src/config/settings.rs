@@ -1,10 +1,15 @@
-use std::{env, fmt};
 use config::{Config, ConfigError, Environment, File, FileFormat};
 use once_cell::sync::Lazy;
 use serde::Deserialize;
+use std::{env, fmt};
 
-pub static SETTINGS: Lazy<Settings> =
-    Lazy::new(|| Settings::new().expect("Failed to setup settings"));
+pub static SETTINGS: Lazy<Settings> = Lazy::new(|| Settings::new().expect("Failed to setup settings"));
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct App {
+    pub name: String,
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Server {
@@ -19,10 +24,15 @@ pub struct Triton {
     pub faceid_grpc_port: u16,
 }
 
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct Logger {
     pub level: String,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct Tracer {
+    pub uri: String,
 }
 
 #[allow(dead_code)]
@@ -32,6 +42,8 @@ pub struct Settings {
     pub server: Server,
     pub logger: Option<Logger>,
     pub triton: Triton,
+    pub tracer: Tracer,
+    pub app: App,
 }
 
 impl Settings {
@@ -49,9 +61,7 @@ impl Settings {
             builder = builder.set_override("server.port", port)?;
         }
 
-        builder
-            .build()?
-            .try_deserialize()
+        builder.build()?.try_deserialize()
     }
 }
 
@@ -68,7 +78,7 @@ mod tests {
     #[test]
     fn test_new() {
         let settings = match Settings::new() {
-            Ok(settings) => {settings}
+            Ok(settings) => settings,
             Err(e) => {
                 println!("{:?}", e);
                 return;
@@ -76,7 +86,5 @@ mod tests {
         };
 
         println!("{:?}", settings.logger.unwrap().level)
-
-
     }
 }

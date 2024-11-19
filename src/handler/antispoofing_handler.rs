@@ -4,6 +4,10 @@ use bytes::Bytes;
 use ecs_logger::extra_fields;
 use http::{HeaderMap, StatusCode};
 use log::{error, info};
+use opentelemetry::global;
+use opentelemetry::global::ObjectSafeSpan;
+use opentelemetry::trace::{TraceContextExt, Tracer};
+use crate::config::settings::SETTINGS;
 use crate::error::errors::ResponseCode;
 use crate::logger::logger::LoggerExtraFields;
 use crate::models::antispoofing_model::{AntiSpoofingExtractionInput, AntiSpoofingExtractionResultOutput};
@@ -12,6 +16,12 @@ use crate::state::antispoofing_state::AntiSpoofingState;
 
 #[debug_handler(state=AntiSpoofingState)]
 pub async fn antispoofing_extract(headers: HeaderMap, State(state): State<AntiSpoofingState>, mut payload: Multipart) -> GeneralResponseResult<BaseResponse<AntiSpoofingExtractionResultOutput>> {
+    let tracer = global::tracer(SETTINGS.app.name.clone());
+    let parent_ctx = opentelemetry::Context::new();
+    let span = tracer
+        .span_builder("antispoofing-extraction")
+        .start_with_context(&tracer, &parent_ctx);
+
     let request_id_header = headers.get("x-request-id").unwrap().to_str().unwrap();
     let mut im_bytes: Bytes = Bytes::new();
     let request_id: String = request_id_header.parse().unwrap();
@@ -22,8 +32,9 @@ pub async fn antispoofing_extract(headers: HeaderMap, State(state): State<AntiSp
         request_id: request_id.clone(),
     }).unwrap();
 
+    let child_ctx = parent_ctx.with_span(span);
+    let mut child = tracer.start_with_context("marshal-request", &child_ctx);
     info!("received anti-spoofing extraction request");
-
     while let Some(field) = payload.next_field().await.unwrap() {
         let name = field.name().unwrap().to_string();
         match name.as_str() {
@@ -113,7 +124,9 @@ pub async fn antispoofing_extract(headers: HeaderMap, State(state): State<AntiSp
         is_enroll,
         spoofing_check,
     };
+    child.end();
 
+    let mut child = tracer.start_with_context("extract-image", &child_ctx);
     let result = match state.anti_spoofing_service.extract_antispoofing_image(input).await {
         Ok(result) => {result}
         Err(e) => {
@@ -133,6 +146,7 @@ pub async fn antispoofing_extract(headers: HeaderMap, State(state): State<AntiSp
     };
     info!("completed extracting image");
     extra_fields::clear_extra_fields();
+    child.end();
 
     return Ok(GeneralResponseBuilder::new()
         .status_code(StatusCode::OK)

@@ -22,7 +22,7 @@ impl GeneralService {
             Ok(result) => {result}
             Err(e) => {
                 error!("failed to extract face: {e}");
-                return Ok(GeneralExtractionResultOutput::default())
+                return Err(e)
             }
         };
 
