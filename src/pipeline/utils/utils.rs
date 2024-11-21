@@ -145,12 +145,20 @@ pub fn array2_to_mat(arr: &Array2<f32>) -> opencv::Result<Mat> {
     Ok(mat)
 }
 
-pub fn normalize_outputs(outputs: Vec<Vec<Array2<f32>>>) -> Vec<Array2<f32>> {
-    outputs.iter().map(|outer| {
-        let array = &outer[0];
-        let norm = array.norm_l2();
-        array / norm
-    }).collect()
+pub fn normalize_outputs(outputs: Vec<Vec<Array2<f32>>>) -> Vec<Array2<f64>> {
+    outputs
+        .iter()
+        .map(|outer| {
+            let array = &outer[0];
+            let norm = l2_norm(array);
+            norm
+        })
+        .collect()
+}
+
+pub fn l2_norm(arr: &Array2<f32>) -> Array2<f64> {
+    let norm = arr.iter().map(|&x| (x as f64).powi(2)).sum::<f64>().sqrt();
+    arr.mapv(|x| x as f64) / norm
 }
 
 
